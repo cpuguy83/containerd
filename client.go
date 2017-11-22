@@ -193,6 +193,10 @@ type RemoteContext struct {
 	// manifests. If this option is false then any image which resolves
 	// to schema 1 will return an error since schema 1 is not supported.
 	ConvertSchema1 bool
+
+	// IgnoreLocalImage changes the default behavior of checking with the local
+	// image store if the image already exists before attempting a pull operation.
+	IgnoreLocalImage bool
 }
 
 func defaultRemoteContext() *RemoteContext {
@@ -220,10 +224,22 @@ func (c *Client) Pull(ctx context.Context, ref string, opts ...RemoteOpt) (Image
 	}
 	defer done()
 
+	if !pullCtx.IgnoreLocalImage {
+		if img, err := c.GetImage(ctx, ref); err != nil && img != nil {
+			if pullCtx.Unpack {
+				if err := img.Unpack(ctx, pullCtx.Snapshotter); err != nil {
+					return nil, err
+				}
+			}
+			return img, nil
+		}
+	}
+
 	name, desc, err := pullCtx.Resolver.Resolve(ctx, ref)
 	if err != nil {
 		return nil, err
 	}
+
 	fetcher, err := pullCtx.Resolver.Fetcher(ctx, name)
 	if err != nil {
 		return nil, err
