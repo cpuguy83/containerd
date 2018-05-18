@@ -9,6 +9,7 @@ import (
 	"github.com/containerd/console"
 	"github.com/containerd/fifo"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 )
 
 type linuxPlatform struct {
@@ -53,7 +54,8 @@ func (p *linuxPlatform) CopyConsole(ctx context.Context, console console.Console
 		cwg.Done()
 		p := bufPool.Get().(*[]byte)
 		defer bufPool.Put(p)
-		io.CopyBuffer(outw, epollConsole, *p)
+		n, err := io.CopyBuffer(outw, epollConsole, *p)
+		logrus.WithField("copied", n).Error(err)
 		epollConsole.Close()
 		outr.Close()
 		outw.Close()
