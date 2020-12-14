@@ -314,7 +314,28 @@ func (s *service) Write(session api.Content_WriteServer) (err error) {
 	}
 	defer wr.Close()
 
+	var waitForPipe chan struct{}
+	if req.PipePath != "" {
+		pipe, err := openPipeReader(ctx, req.PipePath)
+		if err != nil {
+			log.G(ctx).WithError(err).Debug("Error opening requested content pipe for reading")
+		} else {
+			defer pipe.Close()
+			waitForPipe = make(chan struct{})
+			go func() {
+				n, err := io.Copy(wr, pipe)
+				if err != nil {
+					log.G(ctx).WithError(err).WithField("copied", n).Debug("error while copying content from pipe")
+				}
+				log.G(ctx).Error("COPY DONE")
+				close(waitForPipe)
+			}()
+			msg.UsingPipePath = true
+		}
+	}
+
 	for {
+		log.G(ctx).Debugf("%+v", *req)
 		msg.Action = req.Action
 		ws, err := wr.Status()
 		if err != nil {
@@ -374,36 +395,17 @@ func (s *service) Write(session api.Content_WriteServer) (err error) {
 			msg.UpdatedAt = ws.UpdatedAt
 			msg.Total = total
 		case api.WriteActionWrite, api.WriteActionCommit:
-			if req.Offset > 0 {
-				// validate the offset if provided
-				if req.Offset != ws.Offset {
-					return status.Errorf(codes.OutOfRange, "write @%v must occur at current offset %v", req.Offset, ws.Offset)
+			if req.Action == api.WriteActionCommit {
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-waitForPipe:
+					log.G(ctx).Debug("pipe done")
 				}
 			}
 
-			if req.Offset == 0 && ws.Offset > 0 {
-				if err := wr.Truncate(req.Offset); err != nil {
-					return errors.Wrapf(err, "truncate failed")
-				}
-				msg.Offset = req.Offset
-			}
-
-			// issue the write if we actually have data.
-			if len(req.Data) > 0 {
-				// While this looks like we could use io.WriterAt here, because we
-				// maintain the offset as append only, we just issue the write.
-				n, err := wr.Write(req.Data)
-				if err != nil {
-					return errdefs.ToGRPC(err)
-				}
-
-				if n != len(req.Data) {
-					// TODO(stevvooe): Perhaps, we can recover this by including it
-					// in the offset on the write return.
-					return status.Errorf(codes.DataLoss, "wrote %v of %v bytes", n, len(req.Data))
-				}
-
-				msg.Offset += int64(n)
+			if err := s.handleWrite(req, &msg, ws, wr); err != nil {
+				return err
 			}
 
 			if req.Action == api.WriteActionCommit {
@@ -415,8 +417,6 @@ func (s *service) Write(session api.Content_WriteServer) (err error) {
 					return errdefs.ToGRPC(err)
 				}
 			}
-
-			msg.Digest = wr.Digest()
 		}
 
 		if err := session.Send(&msg); err != nil {
@@ -428,10 +428,46 @@ func (s *service) Write(session api.Content_WriteServer) (err error) {
 			if err == io.EOF {
 				return nil
 			}
-
 			return err
 		}
 	}
+}
+
+func (s *service) handleWrite(req *api.WriteContentRequest, msg *api.WriteContentResponse, ws content.Status, wr content.Writer) error {
+	if req.Offset > 0 {
+		// validate the offset if provided
+		if req.Offset != ws.Offset {
+			return status.Errorf(codes.OutOfRange, "write @%v must occur at current offset %v", req.Offset, ws.Offset)
+		}
+	}
+
+	if req.Offset == 0 && ws.Offset > 0 {
+		if err := wr.Truncate(req.Offset); err != nil {
+			return errors.Wrapf(err, "truncate failed")
+		}
+		msg.Offset = req.Offset
+	}
+
+	// issue the write if we actually have data.
+	if len(req.Data) > 0 {
+		// While this looks like we could use io.WriterAt here, because we
+		// maintain the offset as append only, we just issue the write.
+		n, err := wr.Write(req.Data)
+		if err != nil {
+			return errdefs.ToGRPC(err)
+		}
+
+		if n != len(req.Data) {
+			// TODO(stevvooe): Perhaps, we can recover this by including it
+			// in the offset on the write return.
+			return status.Errorf(codes.DataLoss, "wrote %v of %v bytes", n, len(req.Data))
+		}
+
+		msg.Offset += int64(n)
+	}
+
+	msg.Digest = wr.Digest()
+	return nil
 }
 
 func (s *service) Abort(ctx context.Context, req *api.AbortRequest) (*ptypes.Empty, error) {

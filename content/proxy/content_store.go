@@ -18,11 +18,16 @@ package proxy
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"math/rand"
+	"os"
+	"path/filepath"
 
 	contentapi "github.com/containerd/containerd/api/services/content/v1"
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/errdefs"
+	"github.com/containerd/containerd/log"
 	protobuftypes "github.com/gogo/protobuf/types"
 	digest "github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -167,16 +172,28 @@ func (pcs *proxyContentStore) Writer(ctx context.Context, opts ...content.Writer
 			return nil, err
 		}
 	}
-	wrclient, offset, err := pcs.negotiate(ctx, wOpts.Ref, wOpts.Desc.Size, wOpts.Desc.Digest)
+	wrclient, rwc, offset, err := pcs.negotiate(ctx, wOpts.Ref, wOpts.Desc.Size, wOpts.Desc.Digest)
 	if err != nil {
 		return nil, errdefs.FromGRPC(err)
 	}
 
-	return &remoteWriter{
+	rw := &remoteWriter{
 		ref:    wOpts.Ref,
 		client: wrclient,
 		offset: offset,
+	}
+
+	if rwc == nil {
+		log.G(ctx).Error("NOT USING PIPE WRITER")
+		return rw, nil
+	}
+
+	log.G(ctx).Error("USING PIPE WRITER")
+	return &pipeWriter{
+		rwc:          rwc,
+		remoteWriter: rw,
 	}, nil
+
 }
 
 // Abort implements asynchronous abort. It starts a new write session on the ref l
@@ -190,27 +207,57 @@ func (pcs *proxyContentStore) Abort(ctx context.Context, ref string) error {
 	return nil
 }
 
-func (pcs *proxyContentStore) negotiate(ctx context.Context, ref string, size int64, expected digest.Digest) (contentapi.Content_WriteClient, int64, error) {
+func (pcs *proxyContentStore) negotiate(ctx context.Context, ref string, size int64, expected digest.Digest) (_ contentapi.Content_WriteClient, _ io.ReadWriteCloser, _ int64, retErr error) {
 	wrclient, err := pcs.client.Write(ctx)
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, 0, err
 	}
 
-	if err := wrclient.Send(&contentapi.WriteContentRequest{
+	req := &contentapi.WriteContentRequest{
 		Action:   contentapi.WriteActionStat,
 		Ref:      ref,
 		Total:    size,
 		Expected: expected,
-	}); err != nil {
-		return nil, 0, err
+	}
+
+	randBuf := make([]byte, 32)
+	if _, err := rand.Read(randBuf); err != nil {
+		panic(err) // this should never happen
+	}
+	p := filepath.Join(os.TempDir(), fmt.Sprintf("%s-%x", ref, randBuf))
+	rwc, err := makePipe(ctx, p)
+	if err == nil {
+		req.PipePath = p
+		defer func() {
+			if retErr != nil {
+				rwc.Close()
+				os.Remove(p)
+			}
+		}()
+	} else {
+		log.G(ctx).WithError(err).Debug("Error making pipe for grpc content bypass")
+		panic("not using pipe!")
+	}
+
+	if err := wrclient.Send(req); err != nil {
+		return nil, nil, 0, err
 	}
 
 	resp, err := wrclient.Recv()
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, 0, err
 	}
 
-	return wrclient, resp.Offset, nil
+	if !resp.UsingPipePath {
+		if rwc != nil {
+			rwc.Close()
+		} else {
+			panic("Not using pipe!")
+		}
+		return wrclient, nil, resp.Offset, nil
+	}
+
+	return wrclient, rwc, resp.Offset, nil
 }
 
 func infoToGRPC(info content.Info) contentapi.Info {

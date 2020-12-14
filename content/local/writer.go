@@ -42,6 +42,8 @@ type writer struct {
 	digester  digest.Digester
 	startedAt time.Time
 	updatedAt time.Time
+
+	digest digest.Digest
 }
 
 func (w *writer) Status() (content.Status, error) {
@@ -58,6 +60,9 @@ func (w *writer) Status() (content.Status, error) {
 //
 // Cannot be called concurrently with `Write`.
 func (w *writer) Digest() digest.Digest {
+	if w.digest != "" {
+		return w.digest
+	}
 	return w.digester.Digest()
 }
 

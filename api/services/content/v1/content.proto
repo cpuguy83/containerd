@@ -276,6 +276,15 @@ message WriteContentRequest {
 	//
 	// The combined size of a key/value pair cannot exceed 4096 bytes.
 	map<string, string> labels  = 7;
+
+	// PipePath is an optional field that can be set when you want to bypass
+	// GRPC for the data path.
+	//
+	// If this field is set, and the server implementation can use it, it will
+	// set the UsingPipePath field in the write response to true.
+	// If the server can't use the pipe for whatever reason, the client must use
+	// the GRPC stream for data.
+	string pipe_path = 8;
 }
 
 // WriteContentResponse is returned on the culmination of a write call.
@@ -311,6 +320,9 @@ message WriteContentResponse {
 	// bytes. If action is commit, this field will be set. It is implementation
 	// defined if this is set for other actions.
 	string digest = 6 [(gogoproto.customtype) = "github.com/opencontainers/go-digest.Digest", (gogoproto.nullable) = false];
+
+	// UsingPipePath will be set to true if the client set `PipePath` and the server impelementation will read content from that path.
+	bool using_pipe_path = 7;
 }
 
 message AbortRequest {

@@ -19,6 +19,7 @@ package metadata
 import (
 	"context"
 	"encoding/binary"
+	"io"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -469,7 +470,7 @@ func (cs *contentStore) Writer(ctx context.Context, opts ...content.WriterOpt) (
 		return nil, errors.Wrapf(errdefs.ErrAlreadyExists, "content %v", wOpts.Desc.Digest)
 	}
 
-	return &namespacedWriter{
+	nsw := &namespacedWriter{
 		ctx:       ctx,
 		ref:       wOpts.Ref,
 		namespace: ns,
@@ -480,7 +481,13 @@ func (cs *contentStore) Writer(ctx context.Context, opts ...content.WriterOpt) (
 		bref:      bref,
 		started:   time.Now(),
 		desc:      wOpts.Desc,
-	}, nil
+	}
+	if w != nil {
+		if _, ok := w.(io.ReaderFrom); ok {
+			return &namespacedWriterReaderFrom{nsw}, nil
+		}
+	}
+	return nsw, nil
 }
 
 type namespacedWriter struct {
@@ -499,6 +506,14 @@ type namespacedWriter struct {
 	bref    string
 	started time.Time
 	desc    ocispec.Descriptor
+}
+
+type namespacedWriterReaderFrom struct {
+	*namespacedWriter
+}
+
+func (wrf *namespacedWriterReaderFrom) ReadFrom(rdr io.Reader) (int64, error) {
+	return wrf.w.(io.ReaderFrom).ReadFrom(rdr)
 }
 
 func (nw *namespacedWriter) Close() error {
