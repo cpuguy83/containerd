@@ -81,6 +81,9 @@ type Config struct {
 	NoReaper bool
 	// NoSetupLogger disables automatic configuration of logrus to use the shim FIFO
 	NoSetupLogger bool
+	// Server specifies a ttrpc server to attach shim services to.
+	// If none is specified then one is created
+	Server *ttrpc.Server
 }
 
 var (
@@ -234,7 +237,7 @@ func run(id string, initFunc Init, config Config) error {
 			}
 		}
 		client := NewShimClient(ctx, service, signals)
-		if err := client.Serve(); err != nil {
+		if err := client.Serve(config.Server); err != nil {
 			if err != context.Canceled {
 				return err
 			}
@@ -259,7 +262,10 @@ func NewShimClient(ctx context.Context, svc shimapi.TaskService, signals chan os
 }
 
 // Serve the shim server
-func (s *Client) Serve() error {
+//
+// Optionally pass in a ttrpc server to attach shim services to.
+// Otherwise one will be created.
+func (s *Client) Serve(server *ttrpc.Server) error {
 	dump := make(chan os.Signal, 32)
 	setupDumpStacks(dump)
 
@@ -267,9 +273,12 @@ func (s *Client) Serve() error {
 	if err != nil {
 		return err
 	}
-	server, err := newServer()
-	if err != nil {
-		return errors.Wrap(err, "failed creating server")
+
+	if server == nil {
+		server, err = newServer()
+		if err != nil {
+			return errors.Wrap(err, "failed creating server")
+		}
 	}
 
 	logrus.Debug("registering ttrpc server")
