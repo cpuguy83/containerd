@@ -47,6 +47,72 @@ import (
 	criconfig "github.com/containerd/containerd/pkg/cri/config"
 )
 
+// type instrumentedResolver struct {
+// 	remotes.Resolver
+//
+// 	resolveLatency metrics.LabeledTimer
+// 	fetchLatency   metrics.Timer
+// }
+//
+// func (r *instrumentedResolver) Resolve(ctx context.Context, ref string) (string, imagespec.Descriptor, error) {
+// 	start := time.Now()
+// 	span, ctx := tracing.StartSpan(ctx, "resolve")
+// 	defer span.End()
+//
+// 	s, desc, err := r.Resolver.Resolve(ctx, ref)
+// 	status := okStatus
+// 	if err != nil {
+// 		if errors.Is(err, docker.ErrInvalidAuthorization) {
+// 			status = resolveUnauthorizedStatus
+// 		} else {
+// 			status = unknownErrorStatus
+// 		}
+// 		span.SetStatus(codes.Error, err.Error())
+// 	}
+// 	r.resolveLatency.WithValues(status).UpdateSince(start)
+// 	return s, desc, err
+// }
+//
+// func (r *instrumentedResolver) Fetcher(ctx context.Context, ref string) (_ remotes.Fetcher, retErr error) {
+// 	span, ctx := tracing.StartSpan(ctx, "resolver.Fetcher")
+// 	defer span.End()
+//
+// 	fetcher, err := r.Resolver.Fetcher(ctx, ref)
+// 	if err != nil {
+// 		span.SetStatus(codes.Error, err.Error())
+// 		return nil, err
+// 	}
+// 	return &instrumentedFetcher{fetcher, r.fetchLatency}, nil
+// }
+//
+// type instrumentedFetcher struct {
+// 	f             remotes.Fetcher
+// 	fetchLatencty metrics.Timer
+// }
+//
+// func (f *instrumentedFetcher) Fetch(ctx context.Context, desc imagespec.Descriptor) (_ io.ReadCloser, retErr error) {
+// 	span, ctx := tracing.StartSpan(ctx, "fetch")
+// 	defer span.End()
+//
+// 	// Avoid string conversion when not recording
+// 	if span.IsRecording() {
+// 		span.SetAttributes(attribute.String("descriptor.digest", desc.Digest.String()))
+// 		span.SetAttributes(attribute.String("descriptor.mediaType", desc.MediaType))
+// 		span.SetAttributes(attribute.Int64("descriptor.size", desc.Size))
+// 	}
+//
+// 	start := time.Now()
+//
+// 	defer func() {
+// 		if retErr != nil {
+// 			span.SetStatus(codes.Error, retErr.Error())
+// 		}
+// 		f.fetchLatencty.UpdateSince(start)
+// 	}()
+//
+// 	return f.f.Fetch(ctx, desc)
+// }
+
 // For image management:
 // 1) We have an in-memory metadata index to:
 //   a. Maintain ImageID -> RepoTags, ImageID -> RepoDigset relationships; ImageID
@@ -104,6 +170,7 @@ func (c *criService) PullImage(ctx context.Context, r *runtime.PullImageRequest)
 			Headers: c.config.Registry.Headers,
 			Hosts:   c.registryHosts(ctx, r.GetAuth()),
 		})
+
 		isSchema1    bool
 		imageHandler containerdimages.HandlerFunc = func(_ context.Context,
 			desc imagespec.Descriptor) ([]imagespec.Descriptor, error) {
