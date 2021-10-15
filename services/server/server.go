@@ -48,6 +48,7 @@ import (
 	"github.com/containerd/containerd/sys"
 	"github.com/containerd/ttrpc"
 	metrics "github.com/docker/go-metrics"
+	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"github.com/pkg/errors"
 	bolt "go.etcd.io/bbolt"
@@ -95,8 +96,14 @@ func New(ctx context.Context, config *srvconfig.Config) (*Server, error) {
 	}
 
 	serverOpts := []grpc.ServerOption{
-		grpc.UnaryInterceptor(grpc_prometheus.UnaryServerInterceptor),
-		grpc.StreamInterceptor(grpc_prometheus.StreamServerInterceptor),
+		grpc.StreamInterceptor(grpc_middleware.ChainStreamServer(
+			grpc.StreamServerInterceptor(grpc_prometheus.StreamServerInterceptor),
+			streamNamespaceInterceptor,
+		)),
+		grpc.UnaryInterceptor(grpc_middleware.ChainUnaryServer(
+			grpc.UnaryServerInterceptor(grpc_prometheus.UnaryServerInterceptor),
+			unaryNamespaceInterceptor,
+		)),
 	}
 	if config.GRPC.MaxRecvMsgSize > 0 {
 		serverOpts = append(serverOpts, grpc.MaxRecvMsgSize(config.GRPC.MaxRecvMsgSize))
