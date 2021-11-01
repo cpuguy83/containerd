@@ -1,39 +1,41 @@
-ARG GO_VERSION=1.16.4
+ARG GO_VERSION
 ARG GO_IMAGE=golang:${GO_VERSION}
 FROM --platform=$BUILDPLATFORM $GO_IMAGE AS go
 
-
 FROM --platform=$BUILDPLATFORM ubuntu:18.04 AS base
-ARG TARGETOS
-ARG TARGETARCH
-ARG TARGETVARIANT
-ARG BUILDPLATFORM
-ARG TARGETPLATFORM
 SHELL ["/bin/bash", "-xec"]
-RUN if [ ! "$TARGETARCH" = "amd64" ] && [ ! "$TARGETPLATFORM" = "$BUILDPLATFORM" ]; then \
-		echo deb [arch=$(dpkg --print-architecture)] http://archive.ubuntu.com/ubuntu/ bionic main multiverse restricted universe > /etc/apt/sources.list; \
-		echo deb [arch=$(dpkg --print-architecture)] http://archive.ubuntu.com/ubuntu/ bionic-updates main multiverse restricted universe >> /etc/apt/sources.list; \
-		echo deb [arch=$(dpkg --print-architecture)] http://security.ubuntu.com/ubuntu/ bionic-security main multiverse restricted universe >> /etc/apt/sources.lis; \
+# Ubuntu has entirely separate repos for non-amd64 architectures
+# Because of this we can't just add new arches, we need to update the repo list first
+RUN \
+		echo deb [arch=amd64] http://archive.ubuntu.com/ubuntu/ bionic main multiverse restricted universe > /etc/apt/sources.list; \
+		echo deb [arch=amd64] http://archive.ubuntu.com/ubuntu/ bionic-updates main multiverse restricted universe >> /etc/apt/sources.list; \
+		echo deb [arch=amd64] http://security.ubuntu.com/ubuntu/ bionic-security main multiverse restricted universe >> /etc/apt/sources.lis; \
 		echo deb [arch=arm64,armhf] http://ports.ubuntu.com/ubuntu-ports/ bionic main multiverse restricted universe >> /etc/apt/sources.list; \
-		echo deb [arch=arm64,armhf] http://ports.ubuntu.com/ubuntu-ports/ bionic-updates main multiverse restricted universe >> /etc/apt/sources.list; \
-		dpkg --add-architecture "$TARGETARCH"; \
-	fi
+		echo deb [arch=arm64,armhf] http://ports.ubuntu.com/ubuntu-ports/ bionic-updates main multiverse restricted universe >> /etc/apt/sources.list
+RUN dpkg --add-architecture arm64
 RUN	apt-get update && apt-get install -y \
 	binutils-mingw-w64 \
 	crossbuild-essential-arm64 \
 	g++-mingw-w64-x86-64 \
 	git \
-	pkg-config \
-	btrfs-progs:${TARGETARCH} \
-	libseccomp-dev:${TARGETARCH}
+	libseccomp-dev:amd64 \
+	libseccomp-dev:arm64 \
+	pkg-config
+ARG TARGETARCH
+ARG TARGETVARIANT
+ARG TARGETOS
+# btrfs-progs cannot have multiple arch versions installed at the same time
+# Unfortunately this is also means we can't share a build cache between arches beyond this point.
+RUN if [ "$TARGETOS" = "linux" ]; then \
+		apt-get update && \
+		apt-get install -y btrfs-progs:${TARGETARCH}; \
+	fi
 ENV PATH=/usr/local/go/bin:$PATH
-ENV CGO_ENABLED=1
-ENV GOOS=$TARGETOS
-ENV GOARCH=$TARGETARCH
 ENV GOPATH=/go
+ENV CGO_ENABLED=1
 COPY --from=go /usr/local/go /usr/local/go
 
-FROM base AS base-arm64
+FROM base AS linux-arm64
 ENV CC=aarch64-linux-gnu-gcc
 RUN \
 	PKG_CONFIG_PATH="$(pkg-config --variable pc_path pkg-config)"; \
@@ -42,25 +44,30 @@ RUN \
     done; \
     echo export PKG_CONFIG_PATH="${PKG_CONFIG_PATH}" > /tmp/pkgconfig
 
-FROM base AS base-amd64
+FROM base AS linux-amd64
 
-FROM base-${TARGETARCH}${TARGETVARIANT} AS base-target
+FROM base AS windows-amd64
+ENV CC=x86_64-w64-mingw32-gcc
+# Set variables used by cni script which would otherwise shell out to powershell
+ARG RELEASE_VER
+ENV RELEASE_VER=$RELEASE_VER
+ARG GATEWAY
+ENV GATEWAY=$GATEWAY
+ARG PREFIX_LEN
+ENV PREFIX_LEN=$PREFIX_LEN
+
+FROM ${TARGETOS}-${TARGETARCH}${TARGETVARIANT} AS target
 COPY . /go/src/github.com/containerd/containerd
 WORKDIR /go/src/github.com/containerd/containerd
-RUN make release cri-release cri-cni-release
-
-FROM base-target AS containerd
+ARG TARGETARCH
+ARG TARGETOS
+ENV GOARCH=$TARGETARCH
+ENV GOOS=$TARGETOS
+ENV OS=$TARGETOS
 RUN \
+	--mount=type=cache,target=/root/.cache/go-build \
 	[ -f /tmp/pkgconfig ] && . /tmp/pkgconfig; \
-	make binaries; \
-	rm bin/containerd-stress*
-
-FROM base-target AS runc
-ENV RUNC_FLAVOR=runc
-RUN script/setup/install-runc
-
-FROM base-target AS cni
-RUN script/setup/install-cni
+	make release cri-release cri-cni-release
 
 FROM scratch AS release
-COPY --from=base-target /go/src/github.com/containerd/containerd/releases/ /
+COPY --from=target /go/src/github.com/containerd/containerd/releases/ /
