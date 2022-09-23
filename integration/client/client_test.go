@@ -48,6 +48,7 @@ var (
 	noDaemon          bool
 	noCriu            bool
 	supportsCriu      bool
+	noShimCgroup      bool
 	testNamespace     = "testing"
 	testSnapshotter   = DefaultSnapshotter
 	ctrdStdioFilePath string
@@ -59,6 +60,7 @@ func init() {
 	flag.StringVar(&address, "address", defaultAddress, "The address to the containerd socket for use in the tests")
 	flag.BoolVar(&noDaemon, "no-daemon", false, "Do not start a dedicated daemon for the tests")
 	flag.BoolVar(&noCriu, "no-criu", false, "Do not run the checkpoint tests")
+	flag.BoolVar(&noShimCgroup, "no-shim-cgroup", false, "Do not run the shim cgroup tests")
 }
 
 func testContext(t testing.TB) (context.Context, context.CancelFunc) {
