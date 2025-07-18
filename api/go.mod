@@ -1,6 +1,6 @@
 module github.com/containerd/containerd/api
 
-go 1.21
+go 1.23.0
 
 require (
 	github.com/containerd/ttrpc v1.2.3
@@ -16,7 +16,7 @@ require (
 	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/sirupsen/logrus v1.8.1 // indirect
-	golang.org/x/net v0.21.0 // indirect
-	golang.org/x/sys v0.17.0 // indirect
-	golang.org/x/text v0.14.0 // indirect
+	golang.org/x/net v0.38.0 // indirect
+	golang.org/x/sys v0.31.0 // indirect
+	golang.org/x/text v0.23.0 // indirect
 )

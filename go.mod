@@ -1,6 +1,6 @@
 module github.com/containerd/containerd/v2
 
-go 1.22.0
+go 1.23.0
 
 require (
 	dario.cat/mergo v1.0.0
@@ -70,8 +70,8 @@ require (
 	go.opentelemetry.io/otel/sdk v1.26.0
 	go.opentelemetry.io/otel/trace v1.26.0
 	golang.org/x/mod v0.18.0
-	golang.org/x/sync v0.7.0
-	golang.org/x/sys v0.21.0
+	golang.org/x/sync v0.12.0
+	golang.org/x/sys v0.31.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240415180920-8c6c420018be
 	google.golang.org/grpc v1.63.2
 	google.golang.org/protobuf v1.34.1
@@ -95,7 +95,7 @@ require (
 	github.com/cpuguy83/go-md2man/v2 v2.0.4 // indirect
 	github.com/emicklei/go-restful/v3 v3.11.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
-	github.com/go-jose/go-jose/v3 v3.0.3 // indirect
+	github.com/go-jose/go-jose/v3 v3.0.4 // indirect
 	github.com/go-logr/logr v1.4.1 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
@@ -129,14 +129,13 @@ require (
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/otel/metric v1.26.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.2.0 // indirect
-	golang.org/x/crypto v0.23.0 // indirect
+	golang.org/x/crypto v0.36.0 // indirect
 	golang.org/x/exp v0.0.0-20231214170342-aacd6d4b4611 // indirect
-	golang.org/x/net v0.25.0 // indirect
-	golang.org/x/oauth2 v0.17.0 // indirect
-	golang.org/x/term v0.20.0 // indirect
-	golang.org/x/text v0.15.0 // indirect
+	golang.org/x/net v0.38.0 // indirect
+	golang.org/x/oauth2 v0.27.0 // indirect
+	golang.org/x/term v0.30.0 // indirect
+	golang.org/x/text v0.23.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
-	google.golang.org/appengine v1.6.8 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20240227224415-6ceb2ff114de // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
